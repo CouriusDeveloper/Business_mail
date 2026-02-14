@@ -1,0 +1,20 @@
+[project]
+id = "inbox-agent"
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+port = 54323
+
+[auth]
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+
+[storage]
+file_size_limit = "50MiB"
