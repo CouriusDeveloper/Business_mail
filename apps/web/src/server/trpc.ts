@@ -20,7 +20,7 @@ export async function createContext(): Promise<Context> {
       .from("users")
       .select("organization_id")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
     organizationId = profile?.organization_id ?? null;
   }
 

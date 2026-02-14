@@ -12,6 +12,12 @@ import { Building2, Contact, Users, Settings, Mail, Shield } from "lucide-react"
 
 const settingsCards = [
   {
+    title: "Organisation",
+    description: "Organisationsname und E-Mail-Posteingang konfigurieren",
+    href: "/settings/organization",
+    icon: Mail,
+  },
+  {
     title: "Unternehmen",
     description: "Unternehmen, DATEV Upload Mail und OneDrive-Konfiguration",
     href: "/settings/companies",

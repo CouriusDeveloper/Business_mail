@@ -11,12 +11,14 @@ import {
   Settings,
   AlertCircle,
   LayoutDashboard,
+  Mail,
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Posteingang", href: "/inbox", icon: Inbox },
   { name: "Unklar", href: "/inbox?status=unclear", icon: AlertCircle },
+  { name: "E-Mail-Eingang", href: "/settings/organization", icon: Mail },
   { name: "Unternehmen", href: "/settings/companies", icon: Building2 },
   { name: "Kontakte", href: "/settings/contacts", icon: Contact },
   { name: "Benutzer", href: "/settings/users", icon: Users },
