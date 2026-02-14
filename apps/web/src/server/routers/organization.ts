@@ -2,8 +2,14 @@ import { z } from "zod";
 import { router, orgProcedure } from "../trpc";
 import type { Organization } from "@/types/database";
 
+/** Fields safe to return to the client (excludes tokens) */
+function sanitizeOrg(org: Organization) {
+  const { ms365_access_token, ms365_refresh_token, ...safe } = org;
+  return safe;
+}
+
 export const organizationRouter = router({
-  /** Get the current user's organization */
+  /** Get the current user's organization (tokens excluded) */
   get: orgProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.supabase
       .from("organizations")
@@ -12,7 +18,7 @@ export const organizationRouter = router({
       .single();
 
     if (error) throw error;
-    return data as Organization;
+    return sanitizeOrg(data as Organization);
   }),
 
   /** Update organization settings (name, email config) */
@@ -40,6 +46,26 @@ export const organizationRouter = router({
         .single();
 
       if (error) throw error;
-      return data as Organization;
+      return sanitizeOrg(data as Organization);
     }),
+
+  /** Disconnect Microsoft 365 – removes stored OAuth tokens */
+  ms365Disconnect: orgProcedure.mutation(async ({ ctx }) => {
+    const { data, error } = await ctx.supabase
+      .from("organizations")
+      .update({
+        ms365_access_token: null,
+        ms365_refresh_token: null,
+        ms365_token_expiry: null,
+        ms365_connected_email: null,
+        ms365_connected: false,
+        ms365_tenant_id: null,
+      })
+      .eq("id", ctx.organizationId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return sanitizeOrg(data as Organization);
+  }),
 });

@@ -13,6 +13,39 @@ logger = logging.getLogger(__name__)
 celery_app = Celery("inbox-agent", broker=settings.redis_url)
 
 
+def _create_graph_client_for_org(org_data: dict) -> GraphClient:
+    """Create the right GraphClient for an organization.
+
+    Uses delegated OAuth tokens when available (ms365_connected),
+    falls back to client credentials flow otherwise.
+    """
+    if org_data.get("ms365_connected") and org_data.get("ms365_access_token"):
+        from supabase import create_client
+
+        org_id = org_data["id"]
+
+        async def persist_refreshed_tokens(
+            new_access: str, new_refresh: str, new_expiry: str
+        ) -> None:
+            """Callback to store refreshed tokens back to the database."""
+            sb = create_client(settings.supabase_url, settings.supabase_service_role_key)
+            sb.table("organizations").update({
+                "ms365_access_token": new_access,
+                "ms365_refresh_token": new_refresh,
+                "ms365_token_expiry": new_expiry,
+            }).eq("id", org_id).execute()
+
+        return GraphClient.from_delegated(
+            access_token=org_data["ms365_access_token"],
+            refresh_token=org_data.get("ms365_refresh_token", ""),
+            token_expiry=org_data.get("ms365_token_expiry"),
+            on_token_refresh=persist_refreshed_tokens,
+        )
+
+    # Fallback: client credentials flow
+    return GraphClient(tenant_id=org_data.get("ms365_tenant_id"))
+
+
 @celery_app.task
 def process_webhook_notification(notification: dict) -> dict:
     """Handle a Graph API webhook notification for a new email."""
@@ -39,12 +72,17 @@ def poll_for_new_emails(organization_id: str) -> dict:
     return asyncio.run(_poll_emails(organization_id))
 
 
-async def _ingest_email(user_id: str, message_id: str) -> dict:
+async def _ingest_email(user_id: str, message_id: str, org_data: dict | None = None) -> dict:
     """Fetch and process a single email from Graph API."""
     from supabase import create_client
 
     supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)
-    graph = GraphClient()
+
+    # Create graph client: use org-specific tokens if org_data provided
+    if org_data:
+        graph = _create_graph_client_for_org(org_data)
+    else:
+        graph = GraphClient()
 
     # Fetch full email with attachments
     message = await graph.get_message(user_id, message_id)
@@ -60,22 +98,32 @@ async def _ingest_email(user_id: str, message_id: str) -> dict:
         logger.info("Email %s already processed, skipping", graph_message_id)
         return {"status": "duplicate", "message_id": graph_message_id}
 
-    # Find organization by inbox email
+    # Find organization by inbox email (or use provided org_data)
     to_addresses = [
         r.get("emailAddress", {}).get("address", "")
         for r in message.get("toRecipients", [])
     ]
     from_address = message.get("from", {}).get("emailAddress", {}).get("address", "")
 
-    # Look up organization by any recipient address matching inbox_email
-    org = None
-    for addr in to_addresses:
-        result = supabase.table("organizations").select("*").eq(
-            "inbox_email", addr
-        ).execute()
-        if result.data:
-            org = result.data[0]
-            break
+    org = org_data
+    if not org:
+        # Look up organization by any recipient address matching inbox_email
+        # Also check ms365_connected_email for OAuth-connected orgs
+        for addr in to_addresses:
+            result = supabase.table("organizations").select("*").eq(
+                "inbox_email", addr
+            ).execute()
+            if result.data:
+                org = result.data[0]
+                break
+
+            # Also try matching connected email
+            result = supabase.table("organizations").select("*").eq(
+                "ms365_connected_email", addr
+            ).execute()
+            if result.data:
+                org = result.data[0]
+                break
 
     if not org:
         logger.warning("No organization found for recipients: %s", to_addresses)
@@ -162,12 +210,13 @@ async def _poll_emails(organization_id: str) -> dict:
     ).single().execute()
     org_data = org.data
 
-    if not org_data.get("inbox_email"):
+    inbox_email = org_data.get("inbox_email") or org_data.get("ms365_connected_email")
+    if not inbox_email:
         return {"status": "no_inbox_configured"}
 
-    graph = GraphClient(tenant_id=org_data.get("ms365_tenant_id"))
+    graph = _create_graph_client_for_org(org_data)
     messages = await graph.get_messages(
-        user_id=org_data["inbox_email"], top=20
+        user_id=inbox_email, top=20
     )
 
     ingested_count = 0
@@ -178,7 +227,7 @@ async def _poll_emails(organization_id: str) -> dict:
         ).execute()
 
         if not existing.data:
-            await _ingest_email(org_data["inbox_email"], msg_id)
+            await _ingest_email(inbox_email, msg_id, org_data=org_data)
             ingested_count += 1
 
     logger.info("Polling complete for org %s: %d new emails", organization_id, ingested_count)

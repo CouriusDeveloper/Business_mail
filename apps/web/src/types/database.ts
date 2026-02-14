@@ -100,6 +100,11 @@ export interface Organization {
   slug: string;
   inbox_email: string | null;
   ms365_tenant_id: string | null;
+  ms365_access_token: string | null;
+  ms365_refresh_token: string | null;
+  ms365_token_expiry: string | null;
+  ms365_connected_email: string | null;
+  ms365_connected: boolean;
   graph_webhook_id: string | null;
   graph_webhook_expiry: string | null;
   settings: OrganizationSettings | null;

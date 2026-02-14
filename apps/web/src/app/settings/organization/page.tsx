@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +14,21 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Mail, Building2, Shield, CheckCircle } from "lucide-react";
+import {
+  Mail,
+  Building2,
+  CheckCircle,
+  XCircle,
+  Link as LinkIcon,
+  Unlink,
+  AlertCircle,
+} from "lucide-react";
 
 export default function OrganizationSettingsPage() {
+  const searchParams = useSearchParams();
   const { data: org, isLoading } = trpc.organization.get.useQuery();
   const utils = trpc.useUtils();
+
   const updateMutation = trpc.organization.update.useMutation({
     onSuccess: () => {
       utils.organization.get.invalidate();
@@ -26,16 +37,24 @@ export default function OrganizationSettingsPage() {
     },
   });
 
+  const disconnectMutation = trpc.organization.ms365Disconnect.useMutation({
+    onSuccess: () => {
+      utils.organization.get.invalidate();
+    },
+  });
+
   const [name, setName] = useState("");
   const [inboxEmail, setInboxEmail] = useState("");
-  const [ms365TenantId, setMs365TenantId] = useState("");
   const [saved, setSaved] = useState(false);
+
+  // Check for OAuth callback messages in URL params
+  const ms365Connected = searchParams.get("ms365_connected");
+  const ms365Error = searchParams.get("ms365_error");
 
   useEffect(() => {
     if (org) {
       setName(org.name);
       setInboxEmail(org.inbox_email ?? "");
-      setMs365TenantId(org.ms365_tenant_id ?? "");
     }
   }, [org]);
 
@@ -43,8 +62,21 @@ export default function OrganizationSettingsPage() {
     updateMutation.mutate({
       name,
       inbox_email: inboxEmail,
-      ms365_tenant_id: ms365TenantId,
     });
+  }
+
+  function handleMs365Connect() {
+    window.location.href = "/api/ms365/authorize";
+  }
+
+  function handleMs365Disconnect() {
+    if (
+      window.confirm(
+        "Microsoft 365 Verbindung wirklich trennen? E-Mails werden nicht mehr automatisch abgerufen."
+      )
+    ) {
+      disconnectMutation.mutate();
+    }
   }
 
   if (isLoading) {
@@ -55,6 +87,8 @@ export default function OrganizationSettingsPage() {
     );
   }
 
+  const isConnected = org?.ms365_connected;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
@@ -63,6 +97,26 @@ export default function OrganizationSettingsPage() {
           Organisationsname und E-Mail-Posteingang konfigurieren
         </p>
       </div>
+
+      {/* OAuth callback status messages */}
+      {ms365Connected && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          <CheckCircle className="h-5 w-5 flex-shrink-0" />
+          <span>
+            Microsoft 365 wurde erfolgreich verbunden! E-Mails werden ab sofort
+            automatisch abgerufen.
+          </span>
+        </div>
+      )}
+      {ms365Error && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          <span>
+            Fehler bei der Microsoft 365 Verbindung:{" "}
+            {decodeURIComponent(ms365Error)}
+          </span>
+        </div>
+      )}
 
       {/* Organization name */}
       <Card>
@@ -92,7 +146,7 @@ export default function OrganizationSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Email inbox */}
+      {/* Microsoft 365 Connection */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
@@ -100,76 +154,103 @@ export default function OrganizationSettingsPage() {
               <Mail className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">E-Mail-Posteingang</CardTitle>
+              <CardTitle className="text-lg">
+                Microsoft 365 Posteingang
+              </CardTitle>
               <CardDescription>
-                Die E-Mail-Adresse, die als Posteingang verwendet wird.
-                Eingehende E-Mails werden automatisch verarbeitet.
+                Verbinden Sie Ihr Microsoft 365 Konto, um E-Mails automatisch
+                abzurufen und zu verarbeiten.
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="inboxEmail">Posteingang E-Mail</Label>
-            <Input
-              id="inboxEmail"
-              type="email"
-              value={inboxEmail}
-              onChange={(e) => setInboxEmail(e.target.value)}
-              placeholder="inbox@ihre-firma.de"
-            />
-          </div>
-          {org?.inbox_email && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle className="h-4 w-4 text-green-500" />
-              Posteingang konfiguriert: {org.inbox_email}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          {isConnected ? (
+            <>
+              {/* Connected state */}
+              <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <div className="flex-1">
+                  <p className="font-medium text-green-900">Verbunden</p>
+                  <p className="text-sm text-green-700">
+                    {org.ms365_connected_email}
+                  </p>
+                </div>
+                <Badge variant="success">Aktiv</Badge>
+              </div>
 
-      {/* Microsoft 365 */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="rounded-md bg-primary/10 p-2">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Microsoft 365 Anbindung</CardTitle>
-              <CardDescription>
-                Verbinden Sie Ihren Microsoft 365 Mandanten, um E-Mails
-                automatisch abzurufen.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="tenantId">Microsoft 365 Tenant-ID</Label>
-            <Input
-              id="tenantId"
-              value={ms365TenantId}
-              onChange={(e) => setMs365TenantId(e.target.value)}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            />
-            <p className="text-xs text-muted-foreground">
-              Ihre Azure AD / Entra ID Mandanten-ID. Zu finden im Azure Portal
-              unter Azure Active Directory.
-            </p>
-          </div>
-          {org?.graph_webhook_id && (
-            <div className="flex items-center gap-2">
-              <Badge variant="success">Webhook aktiv</Badge>
-              {org.graph_webhook_expiry && (
-                <span className="text-xs text-muted-foreground">
-                  Gültig bis:{" "}
-                  {new Date(org.graph_webhook_expiry).toLocaleDateString(
-                    "de-DE"
+              {org?.graph_webhook_id && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  Webhook aktiv
+                  {org.graph_webhook_expiry && (
+                    <span>
+                      &middot; Gültig bis{" "}
+                      {new Date(org.graph_webhook_expiry).toLocaleDateString(
+                        "de-DE"
+                      )}
+                    </span>
                   )}
-                </span>
+                </div>
               )}
-            </div>
+
+              {/* Inbox email override */}
+              <div className="space-y-2 pt-2">
+                <Label htmlFor="inboxEmail">
+                  Posteingang E-Mail (optional abweichend)
+                </Label>
+                <Input
+                  id="inboxEmail"
+                  type="email"
+                  value={inboxEmail}
+                  onChange={(e) => setInboxEmail(e.target.value)}
+                  placeholder={
+                    org.ms365_connected_email ?? "inbox@ihre-firma.de"
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Standardmäßig wird die verbundene E-Mail-Adresse verwendet.
+                  Sie können hier eine andere Adresse angeben (z.B. ein Shared
+                  Mailbox).
+                </p>
+              </div>
+
+              <Button
+                variant="outline"
+                onClick={handleMs365Disconnect}
+                disabled={disconnectMutation.isPending}
+                className="text-destructive hover:text-destructive"
+              >
+                <Unlink className="mr-2 h-4 w-4" />
+                {disconnectMutation.isPending
+                  ? "Wird getrennt..."
+                  : "Verbindung trennen"}
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Disconnected state */}
+              <div className="flex items-center gap-3 rounded-lg border border-muted bg-muted/30 p-4">
+                <XCircle className="h-6 w-6 text-muted-foreground" />
+                <div className="flex-1">
+                  <p className="font-medium">Nicht verbunden</p>
+                  <p className="text-sm text-muted-foreground">
+                    Klicken Sie auf den Button unten, um sich mit Ihrem Microsoft
+                    365 Konto anzumelden.
+                  </p>
+                </div>
+              </div>
+
+              <Button onClick={handleMs365Connect}>
+                <LinkIcon className="mr-2 h-4 w-4" />
+                Mit Microsoft 365 verbinden
+              </Button>
+
+              <p className="text-xs text-muted-foreground">
+                Sie werden zur Microsoft-Anmeldeseite weitergeleitet. Die App
+                benötigt Zugriff auf Ihren E-Mail-Posteingang (Mail.Read).
+              </p>
+            </>
           )}
         </CardContent>
       </Card>
@@ -178,9 +259,9 @@ export default function OrganizationSettingsPage() {
       <div className="flex items-center gap-3">
         <Button
           onClick={handleSave}
-          disabled={updateMutation.isLoading || !name}
+          disabled={updateMutation.isPending || !name}
         >
-          {updateMutation.isLoading ? "Wird gespeichert..." : "Speichern"}
+          {updateMutation.isPending ? "Wird gespeichert..." : "Speichern"}
         </Button>
         {saved && (
           <span className="text-sm text-green-600">
