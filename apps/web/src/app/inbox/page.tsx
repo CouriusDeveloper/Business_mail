@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
@@ -58,6 +58,14 @@ const statusOptions = [
 ];
 
 export default function InboxPage() {
+  return (
+    <Suspense fallback={<div className="py-12 text-center text-muted-foreground">Wird geladen...</div>}>
+      <InboxContent />
+    </Suspense>
+  );
+}
+
+function InboxContent() {
   const searchParams = useSearchParams();
   const initialStatus = searchParams.get("status") as InboxItemStatus | null;
   const [statusFilter, setStatusFilter] = useState<InboxItemStatus | "">(
