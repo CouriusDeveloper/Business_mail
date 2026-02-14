@@ -33,7 +33,7 @@ export default function ContactsPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    type: "supplier" as const,
+    type: "supplier" as "supplier" | "customer" | "both",
     tax_id: "",
     iban: "",
     email_addresses: [] as string[],
