@@ -31,7 +31,7 @@ export default function CompaniesPage() {
     tax_id: "",
     datev_upload_email: "",
     onedrive_folder_path: "",
-    export_target: "datev" as const,
+    export_target: "datev" as "datev" | "onedrive" | "both",
   });
 
   const createMutation = trpc.companies.create.useMutation({
